@@ -15,4 +15,4 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
       KAFKA_DELETE_TOPIC_ENABLE: 'true'
-      KAFKA_CREATE_TOPICS: "zero-test-topic:1:1"
+      KAFKA_CREATE_TOPICS: "zero-test-topic:2:1"
