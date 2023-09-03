@@ -1,1 +1,1 @@
-export const createSocketPath = (pid: number) => `unixSocket${pid}.sock`;
+export const createSocketPath = (pid: number) => `/tmp/unixSocket${pid}.sock`;

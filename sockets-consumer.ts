@@ -1,15 +1,11 @@
 import { Consumer, Kafka, KafkaMessage, Message, logLevel } from 'kafkajs';
-import process from 'node:process';
+import * as process from 'node:process';
 import * as chalk from 'chalk';
-import cluster from 'node:cluster';
+import * as cluster from 'node:cluster';
 import * as pm2 from 'pm2';
-import * as fs from 'fs';
-import * as net from 'net';
-import * as Buffer from 'buffer';
-import { INT32_SIZE } from './common/buffer-conf';
-import { onBuffer } from './consumer/socket-consumer-client';
-import { ClusterSocketInfo, sendDataBatch } from './consumer/socket-consumer-server';
-import { createSocketPath } from './common/socket-path';
+import { Socket } from 'node:net';
+import { createUnixSocketClient, onBuffer } from './consumer/socket-consumer-client';
+import { ClusterSocketInfo, createUnixSocketServer, sendDataBatch } from './consumer/socket-consumer-server';
 
 const isMaster = () => {
     if (cluster.isMaster) {
@@ -67,15 +63,16 @@ if (isMaster()) {
                     const processInfo = data[i];
                     const { pm_id } = processInfo;
                     if (pm_id && pm_id !== process.env.pm_id) {
-                        const serverCreator = createUnixSocketServer(pm_id);
-                        serverCreators.push(serverCreator);
+                        const socketInfoPromise = createUnixSocketServer(pm_id);
+                        serverCreators.push(socketInfoPromise);
                         // servers.push(server);
-                        // clustersPid.push(pm_id);
+                        clustersPid.push(pm_id);
                     }
                 }
                 console.log(chalk.blue(`pm2 list result: ${JSON.stringify(clustersPid)}`));
 
                 Promise.all(serverCreators).then((rets: ClusterSocketInfo[]) => {
+                    console.log('pm2 started all socket server');
                     for (const ret of rets) {
                         const { pid } = ret;
                         servers[pid] = ret;
@@ -118,11 +115,15 @@ if (isMaster()) {
                     return;
                 }
 
-                // 计算当前使用哪个pid  
-                const curClusterIndex = ++index % clustersPid.length;
-                const socketInfo: ClusterSocketInfo = servers[curClusterIndex];
-                sendDataBatch(socketInfo, batch.messages);
-                return heartbeat();
+                // 计算当前使用哪个pid, 由于0是主进程，子进程是从1开始的
+                const curClusterIndex = (++index % clustersPid.length);
+                const pid = clustersPid[curClusterIndex];
+                console.log('current cluster index', pid);
+                const socketInfo: ClusterSocketInfo = servers[pid];
+                if (socketInfo) {
+                    sendDataBatch(socketInfo, batch.messages);
+                }
+                await heartbeat();
             }
         });
     };
@@ -130,21 +131,13 @@ if (isMaster()) {
     refreshClusters();
 } else {
     console.log(chalk.yellow(`this is cluster process: ${process.env.pm_id}`));
-    // for consume each message
-
-    const socketPath = createSocketPath(parseInt(process.env.pm_id!));
-    const client = net.createConnection({ path: socketPath });
-
-    client
-        .on("connect", () => {
-            client.on("data", onBuffer)
-        .on("end", (data: Buffer) => {
-            console.log('received data on end', data && data.toString());
-        }).on("close", () => {
-            console.log('client connect has been ended');
-        }).on("error", (e) => {
-            console.log('client connect has error', e);
+    // FIXME: 这里需要等主进构建完socket server的文件以后才可以开始建立连接
+    // 因此使用setTimeout进行一定时间的等待，这个实现有点粗糙
+    // 可以使用process来进行消息传递，等收到主进程的消息以后再开始建立连接
+    setTimeout(() => {
+        createUnixSocketClient(parseInt(process.env.pm_id!)).then((client: Socket) => {
+            client.on("data", onBuffer);
         });
-    });
+    }, 1000);
 }
 

@@ -1,7 +1,7 @@
 import { INT32_SIZE } from '../common/buffer-conf';
 import { createSocketPath } from '../common/socket-path';
 import { processMessages } from './message-process';
-import net, { Socket } from 'node:net';
+import { Socket, createConnection } from 'node:net';
 
 let totalLen: number = -1;
 let chunksBuffer: Buffer | undefined;
@@ -81,7 +81,7 @@ export function onBuffer(chunk: Buffer){
 
 export function createUnixSocketClient(pid: number): Promise<Socket> {
     return new Promise((resolve, reject) => {
-        const client = net.createConnection({ path: createSocketPath(pid) });
+        const client = createConnection({ path: createSocketPath(pid) });
 
         client
             .on("connect", () => {
